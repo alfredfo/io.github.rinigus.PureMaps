@@ -166,6 +166,10 @@
                     "type": "file",
                     "path": "apikeys.py",
                     "dest": "tools"
+                },
+		{
+                    "type": "patch",
+                    "path": "patches/use-NMEA-from-ttyUSB0.patch"
                 }
             ]
         }

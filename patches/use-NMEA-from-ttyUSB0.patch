@@ -1,0 +1,91 @@
+From 1a08ad9db483d9652ca1be657cc30b33a5fa1488 Mon Sep 17 00:00:00 2001
+From: Alfred Persson Forsberg <cat@catcream.org>
+Date: Fri, 9 Jun 2023 03:49:00 +0200
+Subject: [PATCH] use NMEA from /dev/ttyUSB0
+
+Signed-off-by: Alfred Persson Forsberg <cat@catcream.org>
+---
+ CMakeLists.txt         |  2 +-
+ src/CMakeLists.txt     |  1 +
+ src/positionsource.cpp | 32 +++++++++++++++++++++++++-------
+ 3 files changed, 27 insertions(+), 8 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 086a71c4..f821d0bf 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -106,7 +106,7 @@ else()
+ endif()
+ 
+ # Qt
+-find_package(Qt5 ${QT_MIN_VERSION} COMPONENTS Gui Positioning Qml Quick DBus LinguistTools REQUIRED)
++find_package(Qt5 ${QT_MIN_VERSION} COMPONENTS Gui Positioning Qml Quick DBus LinguistTools SerialPort REQUIRED)
+ if(FLAVOR STREQUAL "kirigami" OR FLAVOR STREQUAL "qtcontrols" OR FLAVOR STREQUAL "uuitk")
+     find_package(Qt5 ${QT_MIN_VERSION} COMPONENTS Widgets QuickControls2 REQUIRED)
+ elseif(FLAVOR STREQUAL "silica")
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 02910310..9707a705 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -70,6 +70,7 @@ target_link_libraries(${APP_NAME}
+     Qt5::Quick
+     Qt5::Positioning
+     Qt5::DBus
++    Qt5::SerialPort
+     s2)
+ 
+ set(LINKING_FLAVORS
+diff --git a/src/positionsource.cpp b/src/positionsource.cpp
+index 42834ca7..f6398a35 100644
+--- a/src/positionsource.cpp
++++ b/src/positionsource.cpp
+@@ -7,6 +7,8 @@
+ #include <QNetworkReply>
+ #include <QNetworkRequest>
+ #include <QVariantMap>
++#include <QNmeaPositionInfoSource>
++#include <QSerialPort>
+ 
+ #include <algorithm>
+ #include <math.h>
+@@ -35,14 +37,30 @@ Q_LOGGING_CATEGORY(lcPositioning, "puremaps.positioning", QtCriticalMsg)
+ 
+ PositionSource::PositionSource(QObject *parent) : QObject(parent)
+ {
+-  m_source = QGeoPositionInfoSource::createDefaultSource(this);
+-
+-  if (!m_source)
++  QSerialPort* serial = new QSerialPort(this);
++  serial->setPortName(QString("/dev/ttyUSB0"));
++  serial->setBaudRate(QSerialPort::Baud9600);
++  serial->setDataBits(QSerialPort::Data8);
++  serial->setParity(QSerialPort::NoParity);
++  serial->setStopBits(QSerialPort::OneStop);
++  serial->open(QIODevice::ReadOnly);
++
++  if (serial->isOpen())
+     {
+-      qWarning() << "Failed to acquire QGeoPositionInfoSource";
+-      return;
+-    }
+-
++      QNmeaPositionInfoSource *source = new QNmeaPositionInfoSource(QNmeaPositionInfoSource::RealTimeMode);
++      source->setDevice(serial);
++      if (source) {
++	connect(source, SIGNAL(positionUpdated(QGeoPositionInfo)), this, SLOT(positionUpdate(QGeoPositionInfo)));
++	source->setPreferredPositioningMethods(QGeoPositionInfoSource::AllPositioningMethods);
++	source->setUpdateInterval(2000);
++	source->startUpdates();
++      }
++      else {
++	qWarning() << "Failed to acquire QGeoPositionInfoSource";
++	return;
++      }
++      m_source = source;
++  }
+   qInfo() << "Acquired QGeoPositionInfoSource:" << m_source->sourceName();
+   if (m_source->sourceName() == "geoclue2")
+     {
+-- 
+2.41.0
+
